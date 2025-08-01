@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>摸鱼朗读助手</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 40px;
+      line-height: 1.6;
+      background-color: #121212;
+      color: #eeeeee;
+    }
+    h1 {
+      margin-bottom: 20px;
+    }
+    textarea {
+      width: 100%;
+      min-height: 250px;
+      padding: 10px;
+      font-size: 16px;
+      border: 1px solid #444;
+      border-radius: 4px;
+      box-sizing: border-box;
+      resize: vertical;
+      background-color: #1e1e1e;
+      color: #eeeeee;
+    }
+    .controls {
+      margin-top: 15px;
+    }
+    button {
+      padding: 8px 16px;
+      margin-right: 10px;
+      font-size: 14px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      background-color: #0066cc;
+      color: #ffffff;
+    }
+    button:disabled {
+      background-color: #444444;
+      color: #888888;
+      cursor: not-allowed;
+    }
+    select, input[type="number"] {
+      background-color: #1e1e1e;
+      color: #eeeeee;
+      border: 1px solid #444;
+    }
+  </style>
+</head>
+<body>
+  <h1>朗读助手</h1>
+  <p>这是一个简洁的文本朗读工具，利用浏览器的语音合成功能将文字朗读出来。您可以选择朗读人、调整朗读速度，并在工作之余小憩时用它来放松。所有设置会自动记忆，下次使用时自动加载。</p>
+
+  <label for="textInput" style="display:none;">输入文本</label>
+  <textarea id="textInput" placeholder="在此粘贴或输入文本"></textarea>
+
+  <div class="controls" style="margin-top: 10px;">
+    <label for="voiceSelect">朗读人：</label>
+    <select id="voiceSelect" style="margin-right: 20px;"></select>
+    <label for="rateInput">速度：</label>
+    <input id="rateInput" type="number" min="0.5" max="2" step="0.1" value="1" style="width:60px; margin-right: 20px;" />
+    <span id="rateDisplay"></span>
+  </div>
+
+  <div class="controls" style="margin-top: 15px;">
+    <button id="startBtn">开始朗读</button>
+    <button id="pauseBtn" disabled>暂停</button>
+    <button id="resumeBtn" disabled>继续朗读</button>
+  </div>
+
+  <script>
+    // 利用 Web Speech API 进行文字转语音朗读。
+    const synth = window.speechSynthesis;
+    let fullText = '';
+    // 每个分段包含文本及其在全文中的起始索引
+    let segments = [];
+    let currentSegmentIndex = 0;
+    let currentCharIndex = 0;
+    let isPaused = false;
+
+    const voiceSelect = document.getElementById('voiceSelect');
+    const rateInput = document.getElementById('rateInput');
+    const rateDisplay = document.getElementById('rateDisplay');
+
+    /** 填充下拉语音列表并恢复上次选择 */
+    function populateVoiceList() {
+      const voices = synth.getVoices();
+      voiceSelect.innerHTML = '';
+      voices.forEach((voice) => {
+        const option = document.createElement('option');
+        option.value = voice.name;
+        option.textContent = `${voice.name} (${voice.lang})`;
+        voiceSelect.appendChild(option);
+      });
+      const savedVoiceName = localStorage.getItem('selectedVoice');
+      if (savedVoiceName) {
+      for (let i = 0; i < voiceSelect.options.length; i++) {
+        if (voiceSelect.options[i].value === savedVoiceName) {
+          voiceSelect.selectedIndex = i;
+          break;
+        }
+      }
+      }
+    }
+    populateVoiceList();
+    if (typeof synth.onvoiceschanged !== 'undefined') {
+      synth.onvoiceschanged = populateVoiceList;
+    }
+
+    /** 
+     * 根据输入文本和起始索引构建分段数组。
+     * 每段最大长度约800字符，保存其起始索引。
+     */
+    function buildSegments(text, startOffset, maxLen) {
+      const sentences = text.match(/[^\n.!?。！？]+[\n.!?。！？]?/g) || [];
+      const segs = [];
+      let current = '';
+      let currentStart = startOffset;
+      sentences.forEach((sent) => {
+        if ((current + sent).length > maxLen) {
+          if (current) {
+            segs.push({ text: current, start: currentStart });
+          }
+          currentStart += current.length;
+          current = sent;
+        } else {
+          current += sent;
+        }
+      });
+      if (current) {
+        segs.push({ text: current, start: currentStart });
+      }
+      return segs;
+    }
+
+    /** 朗读当前分段，并在段落结束时自动朗读下一段 */
+    function speakSegment() {
+      if (isPaused || currentSegmentIndex >= segments.length) {
+        return;
+      }
+      const seg = segments[currentSegmentIndex];
+      const utter = new SpeechSynthesisUtterance(seg.text);
+      const selectedVoiceName = voiceSelect.value;
+      const voices = synth.getVoices();
+      const matched = voices.find((v) => v.name === selectedVoiceName);
+      if (matched) {
+        utter.voice = matched;
+      }
+      utter.rate = parseFloat(rateInput.value) || 1;
+      // 跟踪字符索引
+      utter.onboundary = function(event) {
+        currentCharIndex = seg.start + event.charIndex;
+      };
+      utter.onend = function() {
+        currentCharIndex = seg.start + seg.text.length;
+        currentSegmentIndex++;
+        if (!isPaused) {
+          speakSegment();
+        }
+      };
+      synth.speak(utter);
+    }
+
+    /** 从保存的字符索引重新构建剩余分段并继续朗读 */
+    function speakFromIndex(index) {
+      if (index >= fullText.length) return;
+      const remaining = fullText.substring(index);
+      segments = buildSegments(remaining, index, 800); // 修改为800字符一段
+      currentSegmentIndex = 0;
+      speakSegment();
+    }
+
+    /** 更新速度显示并保存 */
+    function updateRateDisplay() {
+      const rate = parseFloat(rateInput.value) || 1;
+      rateDisplay.textContent = `${rate.toFixed(1)}x`;
+      localStorage.setItem('selectedRate', rate.toString());
+    }
+    (function initRate() {
+      const savedRate = localStorage.getItem('selectedRate');
+      if (savedRate) {
+        rateInput.value = savedRate;
+      }
+      updateRateDisplay();
+    })();
+    rateInput.addEventListener('input', updateRateDisplay);
+
+    // 保存朗读人选择
+    voiceSelect.addEventListener('change', function() {
+      localStorage.setItem('selectedVoice', voiceSelect.value);
+    });
+
+    // 点击“开始朗读”
+    document.getElementById('startBtn').addEventListener('click', function() {
+      const text = document.getElementById('textInput').value.trim();
+      if (!text) {
+        alert('请输入或粘贴文本。');
+        return;
+      }
+      synth.cancel();
+      fullText = text;
+      currentCharIndex = 0;
+      // 将全文拆分为不超过800字符的段落
+      segments = buildSegments(fullText, 0, 800);
+      currentSegmentIndex = 0;
+      isPaused = false;
+      document.getElementById('pauseBtn').disabled = false;
+      document.getElementById('resumeBtn').disabled = true;
+      speakSegment();
+    });
+
+    // 点击“暂停”
+    document.getElementById('pauseBtn').addEventListener('click', function() {
+      if (synth.speaking) {
+        isPaused = true;
+        synth.cancel();
+        document.getElementById('pauseBtn').disabled = true;
+        document.getElementById('resumeBtn').disabled = false;
+      }
+    });
+
+    // 点击“继续朗读”
+    document.getElementById('resumeBtn').addEventListener('click', function() {
+      if (!isPaused) {
+        return;
+      }
+      isPaused = false;
+      document.getElementById('pauseBtn').disabled = false;
+      document.getElementById('resumeBtn').disabled = true;
+      speakFromIndex(currentCharIndex);
+    });
+  </script>
+</body>
+</html>
