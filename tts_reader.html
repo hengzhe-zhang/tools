@@ -70,7 +70,6 @@
     <button id="startBtn">开始朗读</button>
     <button id="pauseBtn" disabled>暂停</button>
     <button id="resumeBtn" disabled>继续朗读</button>
-    <!-- 新增：复制剩余文本按钮 -->
     <button id="copyBtn" disabled>复制剩余文本</button>
   </div>
 
@@ -93,6 +92,37 @@
     const voiceSelect = document.getElementById('voiceSelect');
     const rateInput = document.getElementById('rateInput');
     const rateDisplay = document.getElementById('rateDisplay');
+    const startBtn = document.getElementById('startBtn');
+    const pauseBtn = document.getElementById('pauseBtn');
+    const resumeBtn = document.getElementById('resumeBtn');
+    const copyBtn = document.getElementById('copyBtn');
+
+    /**
+     * 统一的按钮状态管理函数
+     * @param {string} state - 'idle', 'playing', 'paused'
+     */
+    function updateButtonStates(state) {
+      switch(state) {
+        case 'idle':
+          startBtn.disabled = false;
+          pauseBtn.disabled = true;
+          resumeBtn.disabled = true;
+          copyBtn.disabled = true;
+          break;
+        case 'playing':
+          startBtn.disabled = true;
+          pauseBtn.disabled = false;
+          resumeBtn.disabled = true;
+          copyBtn.disabled = false;
+          break;
+        case 'paused':
+          startBtn.disabled = true;
+          pauseBtn.disabled = true;
+          resumeBtn.disabled = false;
+          copyBtn.disabled = false;
+          break;
+      }
+    }
 
     /**
      * 按自然停顿和长度限制将文本拆分成多个较长的段落。
@@ -210,20 +240,68 @@
           // 继续下一段朗读
           speakSegment();
         } else {
-          // 全文朗读完成或已暂停，更新媒体状态为暂停
-          updateMediaSession('paused');
-        }
-        // 如果已朗读到全文末尾，则禁用复制按钮；否则保持可用
-        if (currentCharIndex >= fullText.length) {
-          copyBtn.disabled = true;
-        } else {
-          copyBtn.disabled = false;
+          // 全文朗读完成或已暂停
+          if (currentCharIndex >= fullText.length) {
+            // 朗读完成，回到空闲状态
+            updateButtonStates('idle');
+            updateMediaSession('none');
+          } else {
+            // 暂停状态
+            updateButtonStates('paused');
+            updateMediaSession('paused');
+          }
         }
       };
       utterance = u;
       synth.speak(u);
-      // 每次朗读开始时更新媒体会话为播放
+      // 每次朗读开始时更新按钮和媒体会话为播放状态
+      updateButtonStates('playing');
       updateMediaSession('playing');
+    }
+
+    /**
+     * 开始朗读功能（可被按钮和media key调用）
+     */
+    function startReading() {
+      const text = document.getElementById('textInput').value.trim();
+      if (!text) {
+        alert('请输入或粘贴文本。');
+        return;
+      }
+      // 取消之前的朗读
+      synth.cancel();
+      fullText = text;
+      // 初始化索引
+      currentCharIndex = 0;
+      // 根据全文构建分段，约每段 800 字
+      segments = buildSegments(fullText, 0, 800);
+      currentSegmentIndex = 0;
+      isPaused = false;
+      speakSegment();
+    }
+
+    /**
+     * 暂停朗读功能（可被按钮和media key调用）
+     */
+    function pauseReading() {
+      if (synth.speaking) {
+        isPaused = true;
+        synth.cancel();
+        updateButtonStates('paused');
+        updateMediaSession('paused');
+      }
+    }
+
+    /**
+     * 继续朗读功能（可被按钮和media key调用）
+     */
+    function resumeReading() {
+      if (!isPaused) {
+        return;
+      }
+      // 继续朗读，从当前字符索引恢复
+      isPaused = false;
+      speakFromIndex(currentCharIndex);
     }
 
     /**
@@ -259,32 +337,18 @@
           if (synth.speaking && !isPaused) return;
           if (isPaused) {
             // 从断点继续
-            isPaused = false;
-            document.getElementById('pauseBtn').disabled = false;
-            document.getElementById('resumeBtn').disabled = true;
-            speakFromIndex(currentCharIndex);
+            resumeReading();
           } else {
             // 未在朗读但文本存在，则从头开始朗读
             const text = document.getElementById('textInput').value.trim();
             if (text) {
-              synth.cancel();
-              fullText = text;
-              currentCharIndex = 0;
-              segments = buildSegments(fullText, 0, 800);
-              currentSegmentIndex = 0;
-              speakSegment();
-              document.getElementById('pauseBtn').disabled = false;
-              document.getElementById('resumeBtn').disabled = true;
-              copyBtn.disabled = false;
+              startReading();
             }
           }
         });
         navigator.mediaSession.setActionHandler('pause', function() {
           if (synth.speaking) {
-            isPaused = true;
-            synth.cancel();
-            document.getElementById('pauseBtn').disabled = true;
-            document.getElementById('resumeBtn').disabled = false;
+            pauseReading();
           }
         });
       }
@@ -305,9 +369,6 @@
     voiceSelect.addEventListener('change', function() {
       localStorage.setItem('selectedVoice', voiceSelect.value);
     });
-
-    // 复制剩余文本按钮元素
-    const copyBtn = document.getElementById('copyBtn');
 
     /**
      * 将字符串写入剪贴板，优先使用 Clipboard API，若不可用则退回到 execCommand 方式。
@@ -353,14 +414,12 @@
         currentSegmentIndex = 0;
         // 更新文本框内容为剩余文本
         document.getElementById('textInput').value = remaining;
-        // 禁用暂停和继续按钮，启用开始朗读按钮
-        document.getElementById('pauseBtn').disabled = true;
-        document.getElementById('resumeBtn').disabled = true;
-        document.getElementById('startBtn').disabled = false;
         // 停止任何正在进行的朗读
         synth.cancel();
-        // 禁用复制按钮（已无新内容）
-        copyBtn.disabled = true;
+        isPaused = false;
+        // 更新按钮状态为空闲
+        updateButtonStates('idle');
+        updateMediaSession('none');
         alert('剩余文本已复制到剪贴板！');
       }).catch(() => {
         alert('复制失败，请尝试手动选择文本并复制。');
@@ -379,63 +438,13 @@
       speakSegment();
     }
 
-    /**
-     * 开始朗读：初始化全文、分段索引和状态，控制按钮状态
-     */
-    document.getElementById('startBtn').addEventListener('click', function() {
-      const text = document.getElementById('textInput').value.trim();
-      if (!text) {
-        alert('请输入或粘贴文本。');
-        return;
-      }
-      // 取消之前的朗读
-      synth.cancel();
-      fullText = text;
-      // 初始化索引
-      currentCharIndex = 0;
-      // 根据全文构建分段，约每段 800 字
-      segments = buildSegments(fullText, 0, 800);
-      currentSegmentIndex = 0;
-      isPaused = false;
-      document.getElementById('pauseBtn').disabled = false;
-      document.getElementById('resumeBtn').disabled = true;
-      // 启用复制按钮：开始朗读后可复制剩余文本
-      copyBtn.disabled = false;
-      speakSegment();
-      // 设置媒体会话为播放状态
-      updateMediaSession('playing');
-    });
+    // 按钮事件监听器
+    startBtn.addEventListener('click', startReading);
+    pauseBtn.addEventListener('click', pauseReading);
+    resumeBtn.addEventListener('click', resumeReading);
 
-    /**
-     * 暂停朗读：停止当前朗读，同时保留当前段落索引，便于后续继续。
-     * 使用 cancel() 而不是 pause() 可避免浏览器不支持 resume 的情况。
-     */
-    document.getElementById('pauseBtn').addEventListener('click', function() {
-      if (synth.speaking) {
-        isPaused = true;
-        synth.cancel();
-        document.getElementById('pauseBtn').disabled = true;
-        document.getElementById('resumeBtn').disabled = false;
-        // 更新媒体会话为暂停状态
-        updateMediaSession('paused');
-      }
-    });
-
-    /**
-     * 继续朗读：从当前段落索引继续朗读后续段落。
-     */
-    document.getElementById('resumeBtn').addEventListener('click', function() {
-      if (!isPaused) {
-        return;
-      }
-      // 继续朗读，从当前字符索引恢复
-      isPaused = false;
-      document.getElementById('pauseBtn').disabled = false;
-      document.getElementById('resumeBtn').disabled = true;
-      speakFromIndex(currentCharIndex);
-      // 更新媒体会话为播放状态
-      updateMediaSession('playing');
-    });
+    // 初始化按钮状态
+    updateButtonStates('idle');
   </script>
 </body>
 </html>
