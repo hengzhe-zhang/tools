@@ -273,8 +273,8 @@
       fullText = text;
       // 初始化索引
       currentCharIndex = 0;
-      // 根据全文构建分段，约每段 800 字
-      segments = buildSegments(fullText, 0, 800);
+      // 根据全文构建分段，约每段 1500 字
+      segments = buildSegments(fullText, 0, 1500);
       currentSegmentIndex = 0;
       isPaused = false;
       speakSegment();
@@ -433,7 +433,7 @@
     function speakFromIndex(index) {
       if (index >= fullText.length) return;
       const remaining = fullText.substring(index);
-      segments = buildSegments(remaining, index, 800);
+      segments = buildSegments(remaining, index, 1500);
       currentSegmentIndex = 0;
       speakSegment();
     }
