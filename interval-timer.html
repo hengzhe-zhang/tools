@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>间歇计时器</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 30px;
+            max-width: 400px;
+            width: 100%;
+            animation: fadeIn 0.5s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+            font-size: 28px;
+        }
+
+        .input-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            color: #555;
+            margin-bottom: 8px;
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        input[type="number"] {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: all 0.3s;
+            background: white;
+        }
+
+        input[type="number"]:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .display {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 15px;
+            padding: 30px;
+            margin: 30px 0;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
+        }
+
+        .timer-display {
+            font-size: 48px;
+            font-weight: bold;
+            color: white;
+            margin-bottom: 10px;
+            font-variant-numeric: tabular-nums;
+            text-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+        }
+
+        .progress-info {
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 18px;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 4px;
+            margin-top: 15px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: white;
+            border-radius: 4px;
+            transition: width 1s linear;
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        button {
+            flex: 1;
+            padding: 14px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .btn-start {
+            background: #4caf50;
+            color: white;
+        }
+
+        .btn-start:hover {
+            background: #45a049;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(76, 175, 80, 0.4);
+        }
+
+        .btn-pause {
+            background: #ff9800;
+            color: white;
+        }
+
+        .btn-pause:hover {
+            background: #f57c00;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(255, 152, 0, 0.4);
+        }
+
+        .btn-reset {
+            background: #f44336;
+            color: white;
+        }
+
+        .btn-reset:hover {
+            background: #da190b;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(244, 67, 54, 0.4);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        .sound-toggle {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-top: 20px;
+            gap: 10px;
+        }
+
+        .sound-toggle input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+        }
+
+        .sound-toggle label {
+            margin: 0;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .status {
+            text-align: center;
+            margin-top: 15px;
+            font-size: 14px;
+            color: #666;
+            font-weight: 500;
+            min-height: 20px;
+        }
+
+        @media (max-width: 480px) {
+            .container {
+                padding: 20px;
+            }
+            
+            h1 {
+                font-size: 24px;
+            }
+            
+            .timer-display {
+                font-size: 36px;
+            }
+            
+            .progress-info {
+                font-size: 16px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>⏱️ 间歇计时器</h1>
+        
+        <div class="input-group">
+            <label for="rounds">循环次数</label>
+            <input type="number" id="rounds" min="1" max="9999" value="100" placeholder="输入循环次数">
+        </div>
+        
+        <div class="input-group">
+            <label for="seconds">每次秒数</label>
+            <input type="number" id="seconds" min="1" max="3600" value="20" placeholder="输入每次秒数">
+        </div>
+        
+        <div class="display">
+            <div class="timer-display" id="timerDisplay">00:00</div>
+            <div class="progress-info" id="progressInfo">准备就绪</div>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+            </div>
+        </div>
+        
+        <div class="controls">
+            <button class="btn-start" id="startBtn" onclick="startTimer()">开始</button>
+            <button class="btn-pause" id="pauseBtn" onclick="pauseTimer()" disabled>暂停</button>
+            <button class="btn-reset" id="resetBtn" onclick="resetTimer()">重置</button>
+        </div>
+        
+        <div class="sound-toggle">
+            <input type="checkbox" id="soundEnabled" checked>
+            <label for="soundEnabled">启用声音提示</label>
+        </div>
+        
+        <div class="status" id="status"></div>
+    </div>
+
+    <script>
+        let timer = null;
+        let currentRound = 0;
+        let totalRounds = 0;
+        let secondsPerRound = 0;
+        let currentSeconds = 0;
+        let isPaused = false;
+        let isRunning = false;
+
+        // 创建音频上下文
+        let audioContext = null;
+
+        function initAudio() {
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+        }
+
+        function playBeep(frequency = 800, duration = 200) {
+            if (!document.getElementById('soundEnabled').checked) return;
+            
+            try {
+                initAudio();
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                
+                oscillator.frequency.value = frequency;
+                oscillator.type = 'sine';
+                
+                gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration / 1000);
+                
+                oscillator.start(audioContext.currentTime);
+                oscillator.stop(audioContext.currentTime + duration / 1000);
+            } catch (e) {
+                console.log('音频播放失败:', e);
+            }
+        }
+
+        function updateDisplay() {
+            const minutes = Math.floor(currentSeconds / 60);
+            const seconds = currentSeconds % 60;
+            document.getElementById('timerDisplay').textContent = 
+                `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            
+            document.getElementById('progressInfo').textContent = 
+                `第 ${currentRound} / ${totalRounds} 轮`;
+            
+            const roundProgress = ((secondsPerRound - currentSeconds) / secondsPerRound) * 100;
+            document.getElementById('progressFill').style.width = `${roundProgress}%`;
+        }
+
+        function startTimer() {
+            if (!isRunning) {
+                totalRounds = parseInt(document.getElementById('rounds').value) || 100;
+                secondsPerRound = parseInt(document.getElementById('seconds').value) || 20;
+                currentRound = 1;
+                currentSeconds = secondsPerRound;
+                isRunning = true;
+                isPaused = false;
+            } else if (isPaused) {
+                isPaused = false;
+            }
+            
+            document.getElementById('startBtn').disabled = true;
+            document.getElementById('pauseBtn').disabled = false;
+            document.getElementById('resetBtn').disabled = false;
+            document.getElementById('rounds').disabled = true;
+            document.getElementById('seconds').disabled = true;
+            document.getElementById('status').textContent = '计时进行中...';
+            
+            updateDisplay();
+            
+            timer = setInterval(() => {
+                if (!isPaused) {
+                    currentSeconds--;
+                    updateDisplay();
+                    
+                    if (currentSeconds <= 3 && currentSeconds > 0) {
+                        playBeep(600, 100);
+                    }
+                    
+                    if (currentSeconds <= 0) {
+                        playBeep(1000, 300);
+                        
+                        if (currentRound >= totalRounds) {
+                            clearInterval(timer);
+                            document.getElementById('status').textContent = '✅ 计时完成！';
+                            document.getElementById('progressInfo').textContent = '全部完成！';
+                            playBeep(1200, 500);
+                            setTimeout(() => playBeep(1400, 500), 200);
+                            resetButtons();
+                        } else {
+                            currentRound++;
+                            currentSeconds = secondsPerRound;
+                            updateDisplay();
+                        }
+                    }
+                }
+            }, 1000);
+        }
+
+        function pauseTimer() {
+            if (!isPaused) {
+                isPaused = true;
+                document.getElementById('pauseBtn').textContent = '继续';
+                document.getElementById('status').textContent = '已暂停';
+            } else {
+                isPaused = false;
+                document.getElementById('pauseBtn').textContent = '暂停';
+                document.getElementById('status').textContent = '计时进行中...';
+            }
+        }
+
+        function resetTimer() {
+            clearInterval(timer);
+            timer = null;
+            currentRound = 0;
+            currentSeconds = 0;
+            isPaused = false;
+            isRunning = false;
+            
+            document.getElementById('timerDisplay').textContent = '00:00';
+            document.getElementById('progressInfo').textContent = '准备就绪';
+            document.getElementById('progressFill').style.width = '0%';
+            document.getElementById('status').textContent = '';
+            document.getElementById('pauseBtn').textContent = '暂停';
+            
+            resetButtons();
+        }
+
+        function resetButtons() {
+            document.getElementById('startBtn').disabled = false;
+            document.getElementById('pauseBtn').disabled = true;
+            document.getElementById('resetBtn').disabled = false;
+            document.getElementById('rounds').disabled = false;
+            document.getElementById('seconds').disabled = false;
+            isRunning = false;
+        }
+
+        // 防止手机锁屏
+        if ('wakeLock' in navigator) {
+            let wakeLock = null;
+            
+            async function requestWakeLock() {
+                try {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                } catch (err) {
+                    console.log('Wake Lock error:', err);
+                }
+            }
+            
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'visible' && isRunning) {
+                    requestWakeLock();
+                }
+            });
+        }
+    </script>
+</body>
+</html>
