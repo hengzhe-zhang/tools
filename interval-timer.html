@@ -169,24 +169,52 @@
             transform: none !important;
         }
 
-        .sound-toggle {
+        .toggle-group {
             display: flex;
             align-items: center;
-            justify-content: center;
-            margin-top: 20px;
-            gap: 10px;
+            justify-content: space-between;
+            margin-top: 15px;
+            padding: 10px;
+            background: #f5f5f5;
+            border-radius: 10px;
         }
 
-        .sound-toggle input[type="checkbox"] {
+        .toggle-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .toggle-item input[type="checkbox"] {
             width: 20px;
             height: 20px;
             cursor: pointer;
         }
 
-        .sound-toggle label {
+        .toggle-item label {
             margin: 0;
             cursor: pointer;
             user-select: none;
+            font-size: 14px;
+        }
+
+        .notification-btn {
+            background: #2196F3;
+            color: white;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .notification-btn:hover {
+            background: #1976D2;
+        }
+
+        .notification-btn:disabled {
+            background: #ccc;
         }
 
         .status {
@@ -196,6 +224,13 @@
             color: #666;
             font-weight: 500;
             min-height: 20px;
+        }
+
+        .notification-status {
+            text-align: center;
+            margin-top: 10px;
+            font-size: 12px;
+            color: #888;
         }
 
         @media (max-width: 480px) {
@@ -213,6 +248,12 @@
             
             .progress-info {
                 font-size: 16px;
+            }
+
+            .toggle-group {
+                flex-direction: column;
+                gap: 10px;
+                align-items: flex-start;
             }
         }
     </style>
@@ -245,12 +286,22 @@
             <button class="btn-reset" id="resetBtn" onclick="resetTimer()">重置</button>
         </div>
         
-        <div class="sound-toggle">
-            <input type="checkbox" id="soundEnabled" checked>
-            <label for="soundEnabled">启用声音提示</label>
+        <div class="toggle-group">
+            <div class="toggle-item">
+                <input type="checkbox" id="soundEnabled" checked>
+                <label for="soundEnabled">声音提示</label>
+            </div>
+            <div class="toggle-item">
+                <input type="checkbox" id="notificationEnabled">
+                <label for="notificationEnabled">通知提示</label>
+            </div>
+            <button class="notification-btn" id="requestNotificationBtn" onclick="requestNotificationPermission()" style="display: none;">
+                允许通知
+            </button>
         </div>
         
         <div class="status" id="status"></div>
+        <div class="notification-status" id="notificationStatus"></div>
     </div>
 
     <script>
@@ -261,17 +312,97 @@
         let currentSeconds = 0;
         let isPaused = false;
         let isRunning = false;
+        let notificationPermission = false;
 
         // 创建音频上下文
         let audioContext = null;
 
+        // 检查通知权限状态
+        function checkNotificationPermission() {
+            if ('Notification' in window) {
+                if (Notification.permission === 'granted') {
+                    notificationPermission = true;
+                    document.getElementById('notificationEnabled').checked = true;
+                    document.getElementById('requestNotificationBtn').style.display = 'none';
+                    document.getElementById('notificationStatus').textContent = '✅ 通知已启用';
+                } else if (Notification.permission === 'denied') {
+                    notificationPermission = false;
+                    document.getElementById('notificationEnabled').checked = false;
+                    document.getElementById('notificationEnabled').disabled = true;
+                    document.getElementById('requestNotificationBtn').style.display = 'none';
+                    document.getElementById('notificationStatus').textContent = '❌ 通知已被浏览器阻止，请在浏览器设置中启用';
+                } else {
+                    document.getElementById('requestNotificationBtn').style.display = 'inline-block';
+                    document.getElementById('notificationEnabled').checked = false;
+                    document.getElementById('notificationStatus').textContent = '点击"允许通知"按钮启用通知功能';
+                }
+            } else {
+                document.getElementById('notificationEnabled').style.display = 'none';
+                document.getElementById('notificationStatus').textContent = '此浏览器不支持通知功能';
+            }
+        }
+
+        // 请求通知权限
+        async function requestNotificationPermission() {
+            if ('Notification' in window) {
+                try {
+                    const permission = await Notification.requestPermission();
+                    if (permission === 'granted') {
+                        notificationPermission = true;
+                        document.getElementById('notificationEnabled').checked = true;
+                        document.getElementById('requestNotificationBtn').style.display = 'none';
+                        document.getElementById('notificationStatus').textContent = '✅ 通知已启用';
+                        
+                        // 发送测试通知
+                        new Notification('间歇计时器', {
+                            body: '通知功能已成功启用！',
+                            icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y="50" font-size="50">⏱️</text></svg>',
+                            badge: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y="50" font-size="50">⏱️</text></svg>',
+                            vibrate: [200]
+                        });
+                    } else {
+                        notificationPermission = false;
+                        document.getElementById('notificationEnabled').checked = false;
+                        document.getElementById('notificationStatus').textContent = '❌ 通知权限被拒绝';
+                    }
+                } catch (error) {
+                    console.error('请求通知权限失败:', error);
+                }
+            }
+        }
+
+        // 发送通知
+        function sendNotification(round) {
+            if (notificationPermission && document.getElementById('notificationEnabled').checked) {
+                try {
+                    const notification = new Notification('间歇计时器', {
+                        body: `第 ${round} 轮完成！\n进度: ${round}/${totalRounds}`,
+                        icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y="50" font-size="50">⏱️</text></svg>',
+                        badge: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y="50" font-size="50">⏱️</text></svg>',
+                        tag: 'timer-round',
+                        requireInteraction: false,
+                        vibrate: [200, 100, 200]
+                    });
+                    
+                    // 3秒后自动关闭通知
+                    setTimeout(() => {
+                        notification.close();
+                    }, 3000);
+                } catch (error) {
+                    console.error('发送通知失败:', error);
+                }
+            }
+        }
+
+        // 初始化音频
         function initAudio() {
             if (!audioContext) {
                 audioContext = new (window.AudioContext || window.webkitAudioContext)();
             }
         }
 
-        function playBeep(frequency = 800, duration = 200) {
+        // 播放提示音（只在每轮结束时播放）
+        function playBeep(frequency = 800, duration = 300) {
             if (!document.getElementById('soundEnabled').checked) return;
             
             try {
@@ -334,19 +465,28 @@
                     currentSeconds--;
                     updateDisplay();
                     
-                    if (currentSeconds <= 3 && currentSeconds > 0) {
-                        playBeep(600, 100);
-                    }
-                    
                     if (currentSeconds <= 0) {
+                        // 播放提示音
                         playBeep(1000, 300);
+                        
+                        // 发送通知
+                        sendNotification(currentRound);
                         
                         if (currentRound >= totalRounds) {
                             clearInterval(timer);
                             document.getElementById('status').textContent = '✅ 计时完成！';
                             document.getElementById('progressInfo').textContent = '全部完成！';
-                            playBeep(1200, 500);
-                            setTimeout(() => playBeep(1400, 500), 200);
+                            
+                            // 完成时的特殊通知
+                            if (notificationPermission && document.getElementById('notificationEnabled').checked) {
+                                new Notification('间歇计时器', {
+                                    body: `🎉 恭喜！全部 ${totalRounds} 轮已完成！`,
+                                    icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y="50" font-size="50">✅</text></svg>',
+                                    requireInteraction: true,
+                                    vibrate: [200, 100, 200, 100, 200]
+                                });
+                            }
+                            
                             resetButtons();
                         } else {
                             currentRound++;
@@ -396,6 +536,13 @@
             isRunning = false;
         }
 
+        // 监听通知复选框变化
+        document.getElementById('notificationEnabled').addEventListener('change', function(e) {
+            if (e.target.checked && !notificationPermission) {
+                requestNotificationPermission();
+            }
+        });
+
         // 防止手机锁屏
         if ('wakeLock' in navigator) {
             let wakeLock = null;
@@ -414,6 +561,11 @@
                 }
             });
         }
+
+        // 页面加载时检查通知权限
+        window.addEventListener('load', () => {
+            checkNotificationPermission();
+        });
     </script>
 </body>
 </html>
