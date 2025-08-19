@@ -438,6 +438,22 @@
       speakSegment();
     }
 
+// 添加 Alt+S 快捷键切换暂停/继续
+document.addEventListener('keydown', function(e) {
+  // 检测 Alt + S
+  if (e.altKey && e.key.toLowerCase() === 's') {
+    e.preventDefault(); // 阻止默认行为（避免和浏览器冲突）
+    if (synth.speaking && !isPaused) {
+      // 正在朗读 → 切换到暂停
+      pauseReading();
+    } else if (isPaused) {
+      // 暂停中 → 切换到继续
+      resumeReading();
+    }
+  }
+});
+
+
     // 按钮事件监听器
     startBtn.addEventListener('click', startReading);
     pauseBtn.addEventListener('click', pauseReading);
