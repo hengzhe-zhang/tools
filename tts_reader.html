@@ -1,466 +1,413 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="utf-8">
-  <title>朗读助手</title>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      margin: 40px;
-      line-height: 1.6;
-      background-color: #121212;
-      color: #eeeeee;
-    }
-    h1 {
-      margin-bottom: 20px;
-    }
-    textarea {
-      width: 100%;
-      min-height: 250px;
-      padding: 10px;
-      font-size: 16px;
-      border: 1px solid #444;
-      border-radius: 4px;
-      box-sizing: border-box;
-      resize: vertical;
-      background-color: #1e1e1e;
-      color: #eeeeee;
-    }
-    .controls {
-      margin-top: 15px;
-    }
-    button {
-      padding: 8px 16px;
-      margin-right: 10px;
-      font-size: 14px;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-      background-color: #0066cc;
-      color: #ffffff;
-    }
-    button:disabled {
-      background-color: #444444;
-      color: #888888;
-      cursor: not-allowed;
-    }
-    select, input[type="number"] {
-      background-color: #1e1e1e;
-      color: #eeeeee;
-      border: 1px solid #444;
-    }
-  </style>
+    <meta charset="utf-8">
+    <title>朗读助手</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 40px;
+            line-height: 1.6;
+            background-color: #121212;
+            color: #eeeeee;
+        }
+        h1 {
+            margin-bottom: 20px;
+        }
+        textarea {
+            width: 100%;
+            min-height: 250px;
+            padding: 10px;
+            font-size: 16px;
+            border: 1px solid #444;
+            border-radius: 4px;
+            box-sizing: border-box;
+            resize: vertical;
+            background-color: #1e1e1e;
+            color: #eeeeee;
+        }
+        .controls {
+            margin-top: 15px;
+        }
+        button {
+            padding: 8px 16px;
+            margin-right: 10px;
+            font-size: 14px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            background-color: #0066cc;
+            color: #ffffff;
+        }
+        button:disabled {
+            background-color: #444444;
+            color: #888888;
+            cursor: not-allowed;
+        }
+        select, input[type="number"] {
+            background-color: #1e1e1e;
+            color: #eeeeee;
+            border: 1px solid #444;
+        }
+    </style>
 </head>
 <body>
-  <h1>朗读助手</h1>
-  <p>这是一个简洁的文本朗读工具，利用浏览器的语音合成功能将文字朗读出来。您可以选择朗读人、调整朗读速度，并在工作之余小憩时用它来放松。所有设置会自动记忆，下次使用时自动加载。</p>
+    <h1>朗读助手</h1>
+    <p>这是一个简洁的文本朗读工具，利用浏览器的语音合成功能将文字朗读出来。您可以选择朗读人、调整朗读速度，并在工作之余小憩时用它来放松。所有设置会自动记忆，下次使用时自动加载。</p>
+    
+    <label for="textInput" style="display:none;">输入文本</label>
+    <textarea id="textInput" placeholder="在此粘贴或输入文本"></textarea>
+    
+    <div class="controls" style="margin-top: 10px;">
+        <label for="voiceSelect">朗读人：</label>
+        <select id="voiceSelect" style="margin-right: 20px;"></select>
+        
+        <label for="rateInput">速度：</label>
+        <input id="rateInput" type="number" min="0.5" max="2" step="0.1" value="1" style="width:60px; margin-right: 20px;" />
+        <span id="rateDisplay"></span>
+    </div>
+    
+    <div class="controls" style="margin-top: 15px;">
+        <button id="startBtn">开始朗读</button>
+        <button id="pauseBtn" disabled>暂停</button>
+        <button id="resumeBtn" disabled>继续朗读</button>
+        <button id="copyBtn" disabled>复制剩余文本</button>
+    </div>
 
-  <label for="textInput" style="display:none;">输入文本</label>
-  <textarea id="textInput" placeholder="在此粘贴或输入文本"></textarea>
+    <script>
+        const synth = window.speechSynthesis;
+        
+        let fullText = '';
+        let segments = [];
+        let currentSegmentIndex = 0;
+        let currentCharIndex = 0;
+        let utterance = null;
+        let isPaused = false;
+        
+        const voiceSelect = document.getElementById('voiceSelect');
+        const rateInput = document.getElementById('rateInput');
+        const rateDisplay = document.getElementById('rateDisplay');
+        const startBtn = document.getElementById('startBtn');
+        const pauseBtn = document.getElementById('pauseBtn');
+        const resumeBtn = document.getElementById('resumeBtn');
+        const copyBtn = document.getElementById('copyBtn');
 
-  <div class="controls" style="margin-top: 10px;">
-    <label for="voiceSelect">朗读人：</label>
-    <select id="voiceSelect" style="margin-right: 20px;"></select>
-    <label for="rateInput">速度：</label>
-    <input id="rateInput" type="number" min="0.5" max="2" step="0.1" value="1" style="width:60px; margin-right: 20px;" />
-    <span id="rateDisplay"></span>
-  </div>
-
-  <div class="controls" style="margin-top: 15px;">
-    <button id="startBtn">开始朗读</button>
-    <button id="pauseBtn" disabled>暂停</button>
-    <button id="resumeBtn" disabled>继续朗读</button>
-    <button id="copyBtn" disabled>复制剩余文本</button>
-  </div>
-
-  <script>
-    // 利用 Web Speech API 进行文字转语音朗读。
-    const synth = window.speechSynthesis;
-    // 全文及分段朗读相关变量
-    let fullText = '';
-    // 分段文本数组，用于朗读，每个元素包含文本和其在全文中的起始索引
-    let segments = [];
-    // 当前朗读段落索引
-    let currentSegmentIndex = 0;
-    // 已朗读到的字符索引（相对于全文）
-    let currentCharIndex = 0;
-    let utterance = null;
-    // 是否处于暂停状态
-    let isPaused = false;
-
-    // 读取设置元素
-    const voiceSelect = document.getElementById('voiceSelect');
-    const rateInput = document.getElementById('rateInput');
-    const rateDisplay = document.getElementById('rateDisplay');
-    const startBtn = document.getElementById('startBtn');
-    const pauseBtn = document.getElementById('pauseBtn');
-    const resumeBtn = document.getElementById('resumeBtn');
-    const copyBtn = document.getElementById('copyBtn');
-
-    /**
-     * 统一的按钮状态管理函数
-     * @param {string} state - 'idle', 'playing', 'paused'
-     */
-    function updateButtonStates(state) {
-      switch(state) {
-        case 'idle':
-          startBtn.disabled = false;
-          pauseBtn.disabled = true;
-          resumeBtn.disabled = true;
-          copyBtn.disabled = true;
-          break;
-        case 'playing':
-          startBtn.disabled = true;
-          pauseBtn.disabled = false;
-          resumeBtn.disabled = true;
-          copyBtn.disabled = false;
-          break;
-        case 'paused':
-          startBtn.disabled = true;
-          pauseBtn.disabled = true;
-          resumeBtn.disabled = false;
-          copyBtn.disabled = false;
-          break;
-      }
-    }
-
-    /**
-     * 按自然停顿和长度限制将文本拆分成多个较长的段落。
-     * 先通过标点分句，然后合并若干句，使每个段落不超过 maxLen 字符，减少朗读中的停顿。
-     * @param {string} text 输入文本
-     * @param {number} maxLen 每个段落的最大长度
-     * @returns {string[]}
-     */
-    function splitIntoChunks(text, maxLen) {
-      // 按中文及英文标点拆分为句子
-      const sentences = text.match(/[^\n.!?。！？]+[\n.!?。！？]?/g) || [];
-      const chunks = [];
-      let current = '';
-      sentences.forEach((sent) => {
-        if ((current + sent).length > maxLen) {
-          if (current) {
-            chunks.push(current);
-          }
-          current = sent;
-        } else {
-          current += sent;
+        /**
+         * 清理文本，过滤掉 # 和 * 符号
+         * @param {string} text 原始文本
+         * @returns {string} 清理后的文本
+         */
+        function cleanText(text) {
+            return text.replace(/[#*]/g, '');
         }
-      });
-      if (current) {
-        chunks.push(current);
-      }
-      return chunks;
-    }
 
-    /**
-     * 用可用的语音填充下拉框，并选中之前保存的朗读人。
-     */
-    function populateVoiceList() {
-      const voices = synth.getVoices();
-      // 清空现有选项
-      voiceSelect.innerHTML = '';
-      voices.forEach((voice) => {
-        const option = document.createElement('option');
-        option.value = voice.name;
-        option.textContent = `${voice.name} (${voice.lang})`;
-        voiceSelect.appendChild(option);
-      });
-      // 如果之前存储了选择，则恢复
-      const savedVoiceName = localStorage.getItem('selectedVoice');
-      if (savedVoiceName) {
-        for (let i = 0; i < voiceSelect.options.length; i++) {
-          if (voiceSelect.options[i].value === savedVoiceName) {
-            voiceSelect.selectedIndex = i;
-            break;
-          }
-        }
-      }
-    }
-
-    // 某些浏览器异步加载语音，需要监听事件
-    populateVoiceList();
-    if (typeof synth.onvoiceschanged !== 'undefined') {
-      synth.onvoiceschanged = populateVoiceList;
-    }
-
-    /**
-     * 根据输入文本和起始索引构建分段数组。每个段落不超过 maxLen 字符，并记录其起始索引。
-     * @param {string} text 输入文本
-     * @param {number} startOffset 在全文中的起始索引
-     * @param {number} maxLen 段落的最大长度
-     * @returns {Array<{text: string, start: number}>}
-     */
-    function buildSegments(text, startOffset, maxLen) {
-      const sentences = text.match(/[^\n.!?。！？]+[\n.!?。！？]?/g) || [];
-      const segs = [];
-      let current = '';
-      let currentStart = startOffset;
-      sentences.forEach((sent) => {
-        if ((current + sent).length > maxLen) {
-          if (current) {
-            segs.push({ text: current, start: currentStart });
-          }
-          currentStart += current.length;
-          current = sent;
-        } else {
-          current += sent;
-        }
-      });
-      if (current) {
-        segs.push({ text: current, start: currentStart });
-      }
-      return segs;
-    }
-
-    /**
-     * 朗读当前段落。如果朗读完成且未暂停，则自动朗读下一个段落。
-     */
-    function speakSegment() {
-      if (isPaused || currentSegmentIndex >= segments.length) {
-        return;
-      }
-      const seg = segments[currentSegmentIndex];
-      const u = new SpeechSynthesisUtterance(seg.text);
-      const selectedVoiceName = voiceSelect.value;
-      const voices = synth.getVoices();
-      const matched = voices.find((v) => v.name === selectedVoiceName);
-      if (matched) {
-        u.voice = matched;
-      }
-      u.rate = parseFloat(rateInput.value) || 1;
-      u.onboundary = function(event) {
-        // 更新当前字符索引，记录在全文中的位置
-        currentCharIndex = seg.start + event.charIndex;
-      };
-      u.onend = function() {
-        // 完成当前段落朗读，更新索引到段落末尾
-        currentCharIndex = seg.start + seg.text.length;
-        currentSegmentIndex++;
-        if (!isPaused && currentSegmentIndex < segments.length) {
-          // 继续下一段朗读
-          speakSegment();
-        } else {
-          // 全文朗读完成或已暂停
-          if (currentCharIndex >= fullText.length) {
-            // 朗读完成，回到空闲状态
-            updateButtonStates('idle');
-            updateMediaSession('none');
-          } else {
-            // 暂停状态
-            updateButtonStates('paused');
-            updateMediaSession('paused');
-          }
-        }
-      };
-      utterance = u;
-      synth.speak(u);
-      // 每次朗读开始时更新按钮和媒体会话为播放状态
-      updateButtonStates('playing');
-      updateMediaSession('playing');
-    }
-
-    /**
-     * 开始朗读功能（可被按钮和media key调用）
-     */
-    function startReading() {
-      const text = document.getElementById('textInput').value.trim();
-      if (!text) {
-        alert('请输入或粘贴文本。');
-        return;
-      }
-      // 取消之前的朗读
-      synth.cancel();
-      fullText = text;
-      // 初始化索引
-      currentCharIndex = 0;
-      // 根据全文构建分段，约每段 1500 字
-      segments = buildSegments(fullText, 0, 1500);
-      currentSegmentIndex = 0;
-      isPaused = false;
-      speakSegment();
-    }
-
-    /**
-     * 暂停朗读功能（可被按钮和media key调用）
-     */
-    function pauseReading() {
-      if (synth.speaking) {
-        isPaused = true;
-        synth.cancel();
-        updateButtonStates('paused');
-        updateMediaSession('paused');
-      }
-    }
-
-    /**
-     * 继续朗读功能（可被按钮和media key调用）
-     */
-    function resumeReading() {
-      if (!isPaused) {
-        return;
-      }
-      // 继续朗读，从当前字符索引恢复
-      isPaused = false;
-      speakFromIndex(currentCharIndex);
-    }
-
-    /**
-     * 更新速度显示并保存到本地存储
-     */
-    function updateRateDisplay() {
-      const rate = parseFloat(rateInput.value) || 1;
-      rateDisplay.textContent = `${rate.toFixed(1)}x`;
-      localStorage.setItem('selectedRate', rate.toString());
-    }
-
-    /**
-     * 更新媒体会话的播放状态和动作处理器。
-     * 利用 Media Session API 将系统媒体键（播放/暂停）绑定到朗读助手。
-     * 当用户按下硬件播放或暂停按钮时，会分别调用朗读或暂停函数。
-     * @param {string} state 媒体会话的播放状态，例如 'playing' 或 'paused'
-     */
-    function updateMediaSession(state) {
-      if ('mediaSession' in navigator) {
-        navigator.mediaSession.metadata = new MediaMetadata({
-          title: '朗读助手',
-          artist: '',
-          album: '',
-          artwork: []
-        });
-        try {
-          navigator.mediaSession.playbackState = state;
-        } catch (e) {
-          // 部分浏览器不支持设置 playbackState
-        }
-        navigator.mediaSession.setActionHandler('play', function() {
-          // 如果正在朗读且未暂停，则忽略
-          if (synth.speaking && !isPaused) return;
-          if (isPaused) {
-            // 从断点继续
-            resumeReading();
-          } else {
-            // 未在朗读但文本存在，则从头开始朗读
-            const text = document.getElementById('textInput').value.trim();
-            if (text) {
-              startReading();
+        function updateButtonStates(state) {
+            switch(state) {
+                case 'idle':
+                    startBtn.disabled = false;
+                    pauseBtn.disabled = true;
+                    resumeBtn.disabled = true;
+                    copyBtn.disabled = true;
+                    break;
+                case 'playing':
+                    startBtn.disabled = true;
+                    pauseBtn.disabled = false;
+                    resumeBtn.disabled = true;
+                    copyBtn.disabled = false;
+                    break;
+                case 'paused':
+                    startBtn.disabled = true;
+                    pauseBtn.disabled = true;
+                    resumeBtn.disabled = false;
+                    copyBtn.disabled = false;
+                    break;
             }
-          }
-        });
-        navigator.mediaSession.setActionHandler('pause', function() {
-          if (synth.speaking) {
-            pauseReading();
-          }
-        });
-      }
-    }
-
-    // 初始化朗读速度显示及恢复
-    function initRate() {
-      const savedRate = localStorage.getItem('selectedRate');
-      if (savedRate) {
-        rateInput.value = savedRate;
-      }
-      updateRateDisplay();
-    }
-    initRate();
-    rateInput.addEventListener('input', updateRateDisplay);
-
-    // 当下拉框变化时保存朗读人
-    voiceSelect.addEventListener('change', function() {
-      localStorage.setItem('selectedVoice', voiceSelect.value);
-    });
-
-    /**
-     * 将字符串写入剪贴板，优先使用 Clipboard API，若不可用则退回到 execCommand 方式。
-     * @param {string} text 要复制的文本
-     * @returns {Promise<void>}
-     */
-    function copyToClipboard(text) {
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        return navigator.clipboard.writeText(text);
-      }
-      return new Promise((resolve, reject) => {
-        try {
-          const textarea = document.createElement('textarea');
-          textarea.value = text;
-          textarea.style.position = 'fixed';
-          textarea.style.opacity = '0';
-          document.body.appendChild(textarea);
-          textarea.focus();
-          textarea.select();
-          const successful = document.execCommand('copy');
-          document.body.removeChild(textarea);
-          successful ? resolve() : reject(new Error('execCommand failed'));
-        } catch (err) {
-          reject(err);
         }
-      });
-    }
 
-    /**
-     * 点击复制按钮时，将剩余未读部分复制到剪贴板，并将已朗读部分从全文中删除。
-     * 如果成功复制，则更新文本框、重置进度，并停止当前朗读。
-     */
-    copyBtn.addEventListener('click', function() {
-      if (!fullText || currentCharIndex >= fullText.length) {
-        return;
-      }
-      const remaining = fullText.substring(currentCharIndex);
-      copyToClipboard(remaining).then(() => {
-        // 更新全文与进度
-        fullText = remaining;
-        currentCharIndex = 0;
-        segments = [];
-        currentSegmentIndex = 0;
-        // 更新文本框内容为剩余文本
-        document.getElementById('textInput').value = remaining;
-        // 停止任何正在进行的朗读
-        synth.cancel();
-        isPaused = false;
-        // 更新按钮状态为空闲
+        function splitIntoChunks(text, maxLen) {
+            const sentences = text.match(/[^\n.!?。！？]+[\n.!?。！？]?/g) || [];
+            const chunks = [];
+            let current = '';
+            
+            sentences.forEach((sent) => {
+                if ((current + sent).length > maxLen) {
+                    if (current) {
+                        chunks.push(current);
+                    }
+                    current = sent;
+                } else {
+                    current += sent;
+                }
+            });
+            
+            if (current) {
+                chunks.push(current);
+            }
+            
+            return chunks;
+        }
+
+        function populateVoiceList() {
+            const voices = synth.getVoices();
+            voiceSelect.innerHTML = '';
+            
+            voices.forEach((voice) => {
+                const option = document.createElement('option');
+                option.value = voice.name;
+                option.textContent = `${voice.name} (${voice.lang})`;
+                voiceSelect.appendChild(option);
+            });
+            
+            const savedVoiceName = localStorage.getItem('selectedVoice');
+            if (savedVoiceName) {
+                for (let i = 0; i < voiceSelect.options.length; i++) {
+                    if (voiceSelect.options[i].value === savedVoiceName) {
+                        voiceSelect.selectedIndex = i;
+                        break;
+                    }
+                }
+            }
+        }
+
+        populateVoiceList();
+        if (typeof synth.onvoiceschanged !== 'undefined') {
+            synth.onvoiceschanged = populateVoiceList;
+        }
+
+        function buildSegments(text, startOffset, maxLen) {
+            const sentences = text.match(/[^\n.!?。！？]+[\n.!?。！？]?/g) || [];
+            const segs = [];
+            let current = '';
+            let currentStart = startOffset;
+            
+            sentences.forEach((sent) => {
+                if ((current + sent).length > maxLen) {
+                    if (current) {
+                        segs.push({ text: current, start: currentStart });
+                    }
+                    currentStart += current.length;
+                    current = sent;
+                } else {
+                    current += sent;
+                }
+            });
+            
+            if (current) {
+                segs.push({ text: current, start: currentStart });
+            }
+            
+            return segs;
+        }
+
+        function speakSegment() {
+            if (isPaused || currentSegmentIndex >= segments.length) {
+                return;
+            }
+            
+            const seg = segments[currentSegmentIndex];
+            const u = new SpeechSynthesisUtterance(seg.text);
+            
+            const selectedVoiceName = voiceSelect.value;
+            const voices = synth.getVoices();
+            const matched = voices.find((v) => v.name === selectedVoiceName);
+            if (matched) {
+                u.voice = matched;
+            }
+            
+            u.rate = parseFloat(rateInput.value) || 1;
+            
+            u.onboundary = function(event) {
+                currentCharIndex = seg.start + event.charIndex;
+            };
+            
+            u.onend = function() {
+                currentCharIndex = seg.start + seg.text.length;
+                currentSegmentIndex++;
+                
+                if (!isPaused && currentSegmentIndex < segments.length) {
+                    speakSegment();
+                } else {
+                    if (currentCharIndex >= fullText.length) {
+                        updateButtonStates('idle');
+                        updateMediaSession('none');
+                    } else {
+                        updateButtonStates('paused');
+                        updateMediaSession('paused');
+                    }
+                }
+            };
+            
+            utterance = u;
+            synth.speak(u);
+            updateButtonStates('playing');
+            updateMediaSession('playing');
+        }
+
+        function startReading() {
+            const rawText = document.getElementById('textInput').value.trim();
+            if (!rawText) {
+                alert('请输入或粘贴文本。');
+                return;
+            }
+            
+            // 清理文本，过滤 # 和 *
+            const text = cleanText(rawText);
+            
+            synth.cancel();
+            fullText = text;
+            currentCharIndex = 0;
+            segments = buildSegments(fullText, 0, 1500);
+            currentSegmentIndex = 0;
+            isPaused = false;
+            speakSegment();
+        }
+
+        function pauseReading() {
+            if (synth.speaking) {
+                isPaused = true;
+                synth.cancel();
+                updateButtonStates('paused');
+                updateMediaSession('paused');
+            }
+        }
+
+        function resumeReading() {
+            if (!isPaused) {
+                return;
+            }
+            
+            isPaused = false;
+            speakFromIndex(currentCharIndex);
+        }
+
+        function updateRateDisplay() {
+            const rate = parseFloat(rateInput.value) || 1;
+            rateDisplay.textContent = `${rate.toFixed(1)}x`;
+            localStorage.setItem('selectedRate', rate.toString());
+        }
+
+        function updateMediaSession(state) {
+            if ('mediaSession' in navigator) {
+                navigator.mediaSession.metadata = new MediaMetadata({
+                    title: '朗读助手',
+                    artist: '',
+                    album: '',
+                    artwork: []
+                });
+                
+                try {
+                    navigator.mediaSession.playbackState = state;
+                } catch (e) {
+                    // 部分浏览器不支持
+                }
+                
+                navigator.mediaSession.setActionHandler('play', function() {
+                    if (synth.speaking && !isPaused) return;
+                    
+                    if (isPaused) {
+                        resumeReading();
+                    } else {
+                        const text = document.getElementById('textInput').value.trim();
+                        if (text) {
+                            startReading();
+                        }
+                    }
+                });
+                
+                navigator.mediaSession.setActionHandler('pause', function() {
+                    if (synth.speaking) {
+                        pauseReading();
+                    }
+                });
+            }
+        }
+
+        function initRate() {
+            const savedRate = localStorage.getItem('selectedRate');
+            if (savedRate) {
+                rateInput.value = savedRate;
+            }
+            updateRateDisplay();
+        }
+
+        initRate();
+        rateInput.addEventListener('input', updateRateDisplay);
+        voiceSelect.addEventListener('change', function() {
+            localStorage.setItem('selectedVoice', voiceSelect.value);
+        });
+
+        function copyToClipboard(text) {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                return navigator.clipboard.writeText(text);
+            }
+            
+            return new Promise((resolve, reject) => {
+                try {
+                    const textarea = document.createElement('textarea');
+                    textarea.value = text;
+                    textarea.style.position = 'fixed';
+                    textarea.style.opacity = '0';
+                    document.body.appendChild(textarea);
+                    textarea.focus();
+                    textarea.select();
+                    const successful = document.execCommand('copy');
+                    document.body.removeChild(textarea);
+                    successful ? resolve() : reject(new Error('execCommand failed'));
+                } catch (err) {
+                    reject(err);
+                }
+            });
+        }
+
+        copyBtn.addEventListener('click', function() {
+            if (!fullText || currentCharIndex >= fullText.length) {
+                return;
+            }
+            
+            const remaining = fullText.substring(currentCharIndex);
+            
+            copyToClipboard(remaining).then(() => {
+                fullText = remaining;
+                currentCharIndex = 0;
+                segments = [];
+                currentSegmentIndex = 0;
+                document.getElementById('textInput').value = remaining;
+                synth.cancel();
+                isPaused = false;
+                updateButtonStates('idle');
+                updateMediaSession('none');
+                alert('剩余文本已复制到剪贴板！');
+            }).catch(() => {
+                alert('复制失败，请尝试手动选择文本并复制。');
+            });
+        });
+
+        function speakFromIndex(index) {
+            if (index >= fullText.length) return;
+            
+            const remaining = fullText.substring(index);
+            segments = buildSegments(remaining, index, 1500);
+            currentSegmentIndex = 0;
+            speakSegment();
+        }
+
+        document.addEventListener('keydown', function(e) {
+            if (e.altKey && e.key.toLowerCase() === 's') {
+                e.preventDefault();
+                
+                if (synth.speaking && !isPaused) {
+                    pauseReading();
+                } else if (isPaused) {
+                    resumeReading();
+                }
+            }
+        });
+
+        startBtn.addEventListener('click', startReading);
+        pauseBtn.addEventListener('click', pauseReading);
+        resumeBtn.addEventListener('click', resumeReading);
+        
         updateButtonStates('idle');
-        updateMediaSession('none');
-        alert('剩余文本已复制到剪贴板！');
-      }).catch(() => {
-        alert('复制失败，请尝试手动选择文本并复制。');
-      });
-    });
-
-    /**
-     * 根据保存的字符索引，从剩余文本重新构建分段并继续朗读。
-     * @param {number} index 全文中的字符索引
-     */
-    function speakFromIndex(index) {
-      if (index >= fullText.length) return;
-      const remaining = fullText.substring(index);
-      segments = buildSegments(remaining, index, 1500);
-      currentSegmentIndex = 0;
-      speakSegment();
-    }
-
-// 添加 Alt+S 快捷键切换暂停/继续
-document.addEventListener('keydown', function(e) {
-  // 检测 Alt + S
-  if (e.altKey && e.key.toLowerCase() === 's') {
-    e.preventDefault(); // 阻止默认行为（避免和浏览器冲突）
-    if (synth.speaking && !isPaused) {
-      // 正在朗读 → 切换到暂停
-      pauseReading();
-    } else if (isPaused) {
-      // 暂停中 → 切换到继续
-      resumeReading();
-    }
-  }
-});
-
-
-    // 按钮事件监听器
-    startBtn.addEventListener('click', startReading);
-    pauseBtn.addEventListener('click', pauseReading);
-    resumeBtn.addEventListener('click', resumeReading);
-
-    // 初始化按钮状态
-    updateButtonStates('idle');
-  </script>
+    </script>
 </body>
 </html>
