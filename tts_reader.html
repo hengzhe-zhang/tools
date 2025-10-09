@@ -92,47 +92,35 @@
         const resumeBtn = document.getElementById('resumeBtn');
         const copyBtn = document.getElementById('copyBtn');
 
-        /**
-         * 清理文本，过滤掉 # 和 * 符号
-         * @param {string} text 原始文本
-         * @returns {string} 清理后的文本
-         */
         function cleanText(text) {
             return text.replace(/[#*]/g, '');
         }
 
         function updateButtonStates(state) {
-            switch(state) {
-                case 'idle':
-                    startBtn.disabled = false;
-                    pauseBtn.disabled = true;
-                    resumeBtn.disabled = true;
-                    copyBtn.disabled = true;
-                    break;
-                case 'playing':
-                    startBtn.disabled = true;
-                    pauseBtn.disabled = false;
-                    resumeBtn.disabled = true;
-                    copyBtn.disabled = false;
-                    break;
-                case 'paused':
-                    startBtn.disabled = true;
-                    pauseBtn.disabled = true;
-                    resumeBtn.disabled = false;
-                    copyBtn.disabled = false;
-                    break;
-            }
+            const states = {
+                idle: { start: false, pause: true, resume: true, copy: true },
+                playing: { start: true, pause: false, resume: true, copy: false },
+                paused: { start: true, pause: true, resume: false, copy: false }
+            };
+            
+            const s = states[state];
+            startBtn.disabled = s.start;
+            pauseBtn.disabled = s.pause;
+            resumeBtn.disabled = s.resume;
+            copyBtn.disabled = s.copy;
         }
 
-        function splitIntoChunks(text, maxLen) {
+        function buildSegments(text, startOffset, maxLen) {
             const sentences = text.match(/[^\n.!?。！？]+[\n.!?。！？]?/g) || [];
-            const chunks = [];
+            const segs = [];
             let current = '';
+            let currentStart = startOffset;
             
             sentences.forEach((sent) => {
                 if ((current + sent).length > maxLen) {
                     if (current) {
-                        chunks.push(current);
+                        segs.push({ text: current, start: currentStart });
+                        currentStart += current.length;
                     }
                     current = sent;
                 } else {
@@ -141,10 +129,109 @@
             });
             
             if (current) {
-                chunks.push(current);
+                segs.push({ text: current, start: currentStart });
             }
             
-            return chunks;
+            return segs;
+        }
+
+        function updateMediaSession(state) {
+            if ('mediaSession' in navigator) {
+                navigator.mediaSession.metadata = new MediaMetadata({
+                    title: '朗读助手',
+                    artist: '',
+                    album: '',
+                    artwork: []
+                });
+                
+                try {
+                    navigator.mediaSession.playbackState = state;
+                } catch (e) {}
+                
+                navigator.mediaSession.setActionHandler('play', () => {
+                    if (isPaused) {
+                        resumeReading();
+                    } else if (!synth.speaking && document.getElementById('textInput').value.trim()) {
+                        startReading();
+                    }
+                });
+                
+                navigator.mediaSession.setActionHandler('pause', () => {
+                    if (synth.speaking) pauseReading();
+                });
+            }
+        }
+
+        function speakSegment() {
+            if (isPaused || currentSegmentIndex >= segments.length) {
+                return;
+            }
+            
+            const seg = segments[currentSegmentIndex];
+            const u = new SpeechSynthesisUtterance(seg.text);
+            
+            const voices = synth.getVoices();
+            const matched = voices.find((v) => v.name === voiceSelect.value);
+            if (matched) u.voice = matched;
+            
+            u.rate = parseFloat(rateInput.value) || 1;
+            
+            u.onboundary = (event) => {
+                currentCharIndex = seg.start + event.charIndex;
+            };
+            
+            u.onend = () => {
+                currentCharIndex = seg.start + seg.text.length;
+                currentSegmentIndex++;
+                
+                if (!isPaused && currentSegmentIndex < segments.length) {
+                    speakSegment();
+                } else {
+                    const state = currentCharIndex >= fullText.length ? 'idle' : 'paused';
+                    updateButtonStates(state);
+                    updateMediaSession(state === 'idle' ? 'none' : 'paused');
+                }
+            };
+            
+            utterance = u;
+            synth.speak(u);
+            updateButtonStates('playing');
+            updateMediaSession('playing');
+        }
+
+        function startReading() {
+            const rawText = document.getElementById('textInput').value.trim();
+            if (!rawText) {
+                alert('请输入或粘贴文本。');
+                return;
+            }
+            
+            synth.cancel();
+            fullText = cleanText(rawText);
+            currentCharIndex = 0;
+            segments = buildSegments(fullText, 0, 1500);
+            currentSegmentIndex = 0;
+            isPaused = false;
+            speakSegment();
+        }
+
+        function pauseReading() {
+            if (synth.speaking) {
+                isPaused = true;
+                synth.cancel();
+                updateButtonStates('paused');
+                updateMediaSession('paused');
+            }
+        }
+
+        function resumeReading() {
+            if (!isPaused || currentCharIndex >= fullText.length) return;
+            
+            isPaused = false;
+            const remaining = fullText.substring(currentCharIndex);
+            segments = buildSegments(remaining, currentCharIndex, 1500);
+            currentSegmentIndex = 0;
+            speakSegment();
         }
 
         function populateVoiceList() {
@@ -169,172 +256,17 @@
             }
         }
 
-        populateVoiceList();
-        if (typeof synth.onvoiceschanged !== 'undefined') {
-            synth.onvoiceschanged = populateVoiceList;
-        }
-
-        function buildSegments(text, startOffset, maxLen) {
-            const sentences = text.match(/[^\n.!?。！？]+[\n.!?。！？]?/g) || [];
-            const segs = [];
-            let current = '';
-            let currentStart = startOffset;
-            
-            sentences.forEach((sent) => {
-                if ((current + sent).length > maxLen) {
-                    if (current) {
-                        segs.push({ text: current, start: currentStart });
-                    }
-                    currentStart += current.length;
-                    current = sent;
-                } else {
-                    current += sent;
-                }
-            });
-            
-            if (current) {
-                segs.push({ text: current, start: currentStart });
-            }
-            
-            return segs;
-        }
-
-        function speakSegment() {
-            if (isPaused || currentSegmentIndex >= segments.length) {
-                return;
-            }
-            
-            const seg = segments[currentSegmentIndex];
-            const u = new SpeechSynthesisUtterance(seg.text);
-            
-            const selectedVoiceName = voiceSelect.value;
-            const voices = synth.getVoices();
-            const matched = voices.find((v) => v.name === selectedVoiceName);
-            if (matched) {
-                u.voice = matched;
-            }
-            
-            u.rate = parseFloat(rateInput.value) || 1;
-            
-            u.onboundary = function(event) {
-                currentCharIndex = seg.start + event.charIndex;
-            };
-            
-            u.onend = function() {
-                currentCharIndex = seg.start + seg.text.length;
-                currentSegmentIndex++;
-                
-                if (!isPaused && currentSegmentIndex < segments.length) {
-                    speakSegment();
-                } else {
-                    if (currentCharIndex >= fullText.length) {
-                        updateButtonStates('idle');
-                        updateMediaSession('none');
-                    } else {
-                        updateButtonStates('paused');
-                        updateMediaSession('paused');
-                    }
-                }
-            };
-            
-            utterance = u;
-            synth.speak(u);
-            updateButtonStates('playing');
-            updateMediaSession('playing');
-        }
-
-        function startReading() {
-            const rawText = document.getElementById('textInput').value.trim();
-            if (!rawText) {
-                alert('请输入或粘贴文本。');
-                return;
-            }
-            
-            // 清理文本，过滤 # 和 *
-            const text = cleanText(rawText);
-            
-            synth.cancel();
-            fullText = text;
-            currentCharIndex = 0;
-            segments = buildSegments(fullText, 0, 1500);
-            currentSegmentIndex = 0;
-            isPaused = false;
-            speakSegment();
-        }
-
-        function pauseReading() {
-            if (synth.speaking) {
-                isPaused = true;
-                synth.cancel();
-                updateButtonStates('paused');
-                updateMediaSession('paused');
-            }
-        }
-
-        function resumeReading() {
-            if (!isPaused) {
-                return;
-            }
-            
-            isPaused = false;
-            speakFromIndex(currentCharIndex);
-        }
-
         function updateRateDisplay() {
             const rate = parseFloat(rateInput.value) || 1;
             rateDisplay.textContent = `${rate.toFixed(1)}x`;
             localStorage.setItem('selectedRate', rate.toString());
         }
 
-        function updateMediaSession(state) {
-            if ('mediaSession' in navigator) {
-                navigator.mediaSession.metadata = new MediaMetadata({
-                    title: '朗读助手',
-                    artist: '',
-                    album: '',
-                    artwork: []
-                });
-                
-                try {
-                    navigator.mediaSession.playbackState = state;
-                } catch (e) {
-                    // 部分浏览器不支持
-                }
-                
-                navigator.mediaSession.setActionHandler('play', function() {
-                    if (synth.speaking && !isPaused) return;
-                    
-                    if (isPaused) {
-                        resumeReading();
-                    } else {
-                        const text = document.getElementById('textInput').value.trim();
-                        if (text) {
-                            startReading();
-                        }
-                    }
-                });
-                
-                navigator.mediaSession.setActionHandler('pause', function() {
-                    if (synth.speaking) {
-                        pauseReading();
-                    }
-                });
-            }
-        }
-
         function initRate() {
             const savedRate = localStorage.getItem('selectedRate');
-            if (savedRate) {
-                rateInput.value = savedRate;
-            }
+            if (savedRate) rateInput.value = savedRate;
             updateRateDisplay();
         }
-
-        initRate();
-        rateInput.addEventListener('input', updateRateDisplay);
-        voiceSelect.addEventListener('change', function() {
-            localStorage.setItem('selectedVoice', voiceSelect.value);
-        });
 
         function copyToClipboard(text) {
             if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -359,10 +291,13 @@
             });
         }
 
-        copyBtn.addEventListener('click', function() {
-            if (!fullText || currentCharIndex >= fullText.length) {
-                return;
-            }
+        // Event listeners
+        startBtn.addEventListener('click', startReading);
+        pauseBtn.addEventListener('click', pauseReading);
+        resumeBtn.addEventListener('click', resumeReading);
+        
+        copyBtn.addEventListener('click', () => {
+            if (!fullText || currentCharIndex >= fullText.length) return;
             
             const remaining = fullText.substring(currentCharIndex);
             
@@ -382,19 +317,9 @@
             });
         });
 
-        function speakFromIndex(index) {
-            if (index >= fullText.length) return;
-            
-            const remaining = fullText.substring(index);
-            segments = buildSegments(remaining, index, 1500);
-            currentSegmentIndex = 0;
-            speakSegment();
-        }
-
-        document.addEventListener('keydown', function(e) {
+        document.addEventListener('keydown', (e) => {
             if (e.altKey && e.key.toLowerCase() === 's') {
                 e.preventDefault();
-                
                 if (synth.speaking && !isPaused) {
                     pauseReading();
                 } else if (isPaused) {
@@ -403,10 +328,17 @@
             }
         });
 
-        startBtn.addEventListener('click', startReading);
-        pauseBtn.addEventListener('click', pauseReading);
-        resumeBtn.addEventListener('click', resumeReading);
-        
+        rateInput.addEventListener('input', updateRateDisplay);
+        voiceSelect.addEventListener('change', () => {
+            localStorage.setItem('selectedVoice', voiceSelect.value);
+        });
+
+        // Initialize
+        populateVoiceList();
+        if (typeof synth.onvoiceschanged !== 'undefined') {
+            synth.onvoiceschanged = populateVoiceList;
+        }
+        initRate();
         updateButtonStates('idle');
     </script>
 </body>
