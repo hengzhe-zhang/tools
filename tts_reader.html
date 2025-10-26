@@ -44,10 +44,23 @@
             color: #888888;
             cursor: not-allowed;
         }
+        button#backwardBtn {
+            background-color: #cc6600;
+        }
+        button#backwardBtn:disabled {
+            background-color: #444444;
+        }
         select, input[type="number"] {
             background-color: #1e1e1e;
             color: #eeeeee;
             border: 1px solid #444;
+        }
+        .settings-row {
+            margin-top: 10px;
+        }
+        .setting-group {
+            display: inline-block;
+            margin-right: 30px;
         }
     </style>
 </head>
@@ -58,19 +71,30 @@
     <label for="textInput" style="display:none;">输入文本</label>
     <textarea id="textInput" placeholder="在此粘贴或输入文本"></textarea>
     
-    <div class="controls" style="margin-top: 10px;">
-        <label for="voiceSelect">朗读人：</label>
-        <select id="voiceSelect" style="margin-right: 20px;"></select>
+    <div class="controls settings-row">
+        <div class="setting-group">
+            <label for="voiceSelect">朗读人：</label>
+            <select id="voiceSelect"></select>
+        </div>
         
-        <label for="rateInput">速度：</label>
-        <input id="rateInput" type="number" min="0.5" max="2" step="0.1" value="1" style="width:60px; margin-right: 20px;" />
-        <span id="rateDisplay"></span>
+        <div class="setting-group">
+            <label for="rateInput">速度：</label>
+            <input id="rateInput" type="number" min="0.5" max="2" step="0.1" value="1" style="width:60px;" />
+            <span id="rateDisplay"></span>
+        </div>
+        
+        <div class="setting-group">
+            <label for="backwardWords">后退词数：</label>
+            <input id="backwardWords" type="number" min="5" max="50" step="5" value="10" style="width:60px;" />
+            <span>词</span>
+        </div>
     </div>
     
     <div class="controls" style="margin-top: 15px;">
         <button id="startBtn">开始朗读</button>
         <button id="pauseBtn" disabled>暂停</button>
         <button id="resumeBtn" disabled>继续朗读</button>
+        <button id="backwardBtn" disabled>⏪ 后退</button>
         <button id="copyBtn" disabled>复制剩余文本</button>
     </div>
 
@@ -87,9 +111,11 @@
         const voiceSelect = document.getElementById('voiceSelect');
         const rateInput = document.getElementById('rateInput');
         const rateDisplay = document.getElementById('rateDisplay');
+        const backwardWords = document.getElementById('backwardWords');
         const startBtn = document.getElementById('startBtn');
         const pauseBtn = document.getElementById('pauseBtn');
         const resumeBtn = document.getElementById('resumeBtn');
+        const backwardBtn = document.getElementById('backwardBtn');
         const copyBtn = document.getElementById('copyBtn');
 
         function cleanText(text) {
@@ -98,15 +124,16 @@
 
         function updateButtonStates(state) {
             const states = {
-                idle: { start: false, pause: true, resume: true, copy: true },
-                playing: { start: true, pause: false, resume: true, copy: false },
-                paused: { start: true, pause: true, resume: false, copy: false }
+                idle: { start: false, pause: true, resume: true, backward: true, copy: true },
+                playing: { start: true, pause: false, resume: true, backward: false, copy: false },
+                paused: { start: true, pause: true, resume: false, backward: false, copy: false }
             };
             
             const s = states[state];
             startBtn.disabled = s.start;
             pauseBtn.disabled = s.pause;
             resumeBtn.disabled = s.resume;
+            backwardBtn.disabled = s.backward;
             copyBtn.disabled = s.copy;
         }
 
@@ -234,6 +261,69 @@
             speakSegment();
         }
 
+        function goBackward() {
+            if (!fullText || currentCharIndex <= 0) return;
+            
+            // Stop current playback
+            synth.cancel();
+            isPaused = true;
+            
+            // Get the portion of text before current position
+            const textBefore = fullText.substring(0, currentCharIndex);
+            
+            // Get number of words to go back
+            const wordsToGoBack = parseInt(backwardWords.value) || 10;
+            
+            // Split by word boundaries (spaces, punctuation, Chinese characters)
+            // For Chinese text, each character is treated as a potential word boundary
+            const words = [];
+            let currentWord = '';
+            
+            for (let i = 0; i < textBefore.length; i++) {
+                const char = textBefore[i];
+                const isChinese = /[\u4e00-\u9fa5]/.test(char);
+                const isSpace = /\s/.test(char);
+                const isPunctuation = /[,.!?;:，。！？；：、]/.test(char);
+                
+                if (isChinese) {
+                    // Each Chinese character can be a word
+                    if (currentWord) {
+                        words.push({ word: currentWord, endIndex: i });
+                        currentWord = '';
+                    }
+                    words.push({ word: char, endIndex: i + 1 });
+                } else if (isSpace || isPunctuation) {
+                    if (currentWord) {
+                        words.push({ word: currentWord, endIndex: i });
+                        currentWord = '';
+                    }
+                    if (!isSpace) {
+                        words.push({ word: char, endIndex: i + 1 });
+                    }
+                } else {
+                    currentWord += char;
+                }
+            }
+            
+            if (currentWord) {
+                words.push({ word: currentWord, endIndex: textBefore.length });
+            }
+            
+            // Go back the specified number of words
+            const targetIndex = Math.max(0, words.length - wordsToGoBack);
+            const newCharIndex = targetIndex > 0 ? words[targetIndex].endIndex - words[targetIndex].word.length : 0;
+            
+            // Update position
+            currentCharIndex = newCharIndex;
+            
+            // Resume from new position
+            isPaused = false;
+            const remaining = fullText.substring(currentCharIndex);
+            segments = buildSegments(remaining, currentCharIndex, 1500);
+            currentSegmentIndex = 0;
+            speakSegment();
+        }
+
         function populateVoiceList() {
             const voices = synth.getVoices();
             voiceSelect.innerHTML = '';
@@ -268,6 +358,11 @@
             updateRateDisplay();
         }
 
+        function initBackwardWords() {
+            const savedWords = localStorage.getItem('backwardWords');
+            if (savedWords) backwardWords.value = savedWords;
+        }
+
         function copyToClipboard(text) {
             if (navigator.clipboard && navigator.clipboard.writeText) {
                 return navigator.clipboard.writeText(text);
@@ -295,6 +390,7 @@
         startBtn.addEventListener('click', startReading);
         pauseBtn.addEventListener('click', pauseReading);
         resumeBtn.addEventListener('click', resumeReading);
+        backwardBtn.addEventListener('click', goBackward);
         
         copyBtn.addEventListener('click', () => {
             if (!fullText || currentCharIndex >= fullText.length) return;
@@ -326,11 +422,22 @@
                     resumeReading();
                 }
             }
+            
+            // Alt+B for backward
+            if (e.altKey && e.key.toLowerCase() === 'b') {
+                e.preventDefault();
+                if (!backwardBtn.disabled) {
+                    goBackward();
+                }
+            }
         });
 
         rateInput.addEventListener('input', updateRateDisplay);
         voiceSelect.addEventListener('change', () => {
             localStorage.setItem('selectedVoice', voiceSelect.value);
+        });
+        backwardWords.addEventListener('change', () => {
+            localStorage.setItem('backwardWords', backwardWords.value);
         });
 
         // Initialize
@@ -339,6 +446,7 @@
             synth.onvoiceschanged = populateVoiceList;
         }
         initRate();
+        initBackwardWords();
         updateButtonStates('idle');
     </script>
 </body>
