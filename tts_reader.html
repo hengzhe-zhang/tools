@@ -66,7 +66,7 @@
 </head>
 <body>
     <h1>朗读助手</h1>
-    <p>这是一个简洁的文本朗读工具，利用浏览器的语音合成功能将文字朗读出来。您可以选择朗读人、调整朗读速度，并在工作之余小憩时用它来放松。所有设置会自动记忆，下次使用时自动加载。</p>
+    <p>这是一个简洁的文本朗读工具，利用浏览器的语音合成功能将文字朗读出来。您可以选择朗读人、调整朗读速度，并在工作之余小憩时用它来放松。所有设置以及当前文本、朗读位置都会自动保存到本地，关闭电脑后再打开也可从上次位置继续。</p>
     
     <label for="textInput" style="display:none;">输入文本</label>
     <textarea id="textInput" placeholder="在此粘贴或输入文本"></textarea>
@@ -101,12 +101,19 @@
     <script>
         const synth = window.speechSynthesis;
         
+        const STORAGE_KEY_TEXT = 'tts_reader_text';
+        const STORAGE_KEY_POSITION = 'tts_reader_position';
+        const SAVE_POSITION_INTERVAL_MS = 2000;
+        const SAVE_TEXT_DEBOUNCE_MS = 500;
+        
         let fullText = '';
         let segments = [];
         let currentSegmentIndex = 0;
         let currentCharIndex = 0;
         let utterance = null;
         let isPaused = false;
+        let lastPositionSaveTime = 0;
+        let saveTextDebounceTimer = null;
         
         const voiceSelect = document.getElementById('voiceSelect');
         const rateInput = document.getElementById('rateInput');
@@ -117,9 +124,53 @@
         const resumeBtn = document.getElementById('resumeBtn');
         const backwardBtn = document.getElementById('backwardBtn');
         const copyBtn = document.getElementById('copyBtn');
+        const textInput = document.getElementById('textInput');
 
         function cleanText(text) {
             return text.replace(/[#*]/g, '');
+        }
+
+        function saveTextToStorage() {
+            const text = textInput.value;
+            try {
+                localStorage.setItem(STORAGE_KEY_TEXT, text);
+            } catch (e) {
+                if (e.name === 'QuotaExceededError') {
+                    console.warn('TTS Reader: localStorage full, could not save text.');
+                }
+            }
+        }
+
+        function savePositionToStorage(immediate) {
+            if (!immediate) {
+                const now = Date.now();
+                if (now - lastPositionSaveTime < SAVE_POSITION_INTERVAL_MS) return;
+                lastPositionSaveTime = now;
+            }
+            try {
+                localStorage.setItem(STORAGE_KEY_POSITION, String(currentCharIndex));
+            } catch (e) {}
+        }
+
+        function loadFromStorage() {
+            const savedText = localStorage.getItem(STORAGE_KEY_TEXT);
+            if (savedText != null) {
+                textInput.value = savedText;
+            }
+            const savedPos = localStorage.getItem(STORAGE_KEY_POSITION);
+            if (savedPos !== null && savedText != null && savedText.length > 0) {
+                fullText = cleanText(savedText);
+                const pos = Math.max(0, Math.min(parseInt(savedPos, 10) || 0, fullText.length));
+                currentCharIndex = pos;
+                if (currentCharIndex > 0 && currentCharIndex < fullText.length) {
+                    updateButtonStates('paused');
+                }
+            }
+        }
+
+        function debouncedSaveText() {
+            if (saveTextDebounceTimer) clearTimeout(saveTextDebounceTimer);
+            saveTextDebounceTimer = setTimeout(saveTextToStorage, SAVE_TEXT_DEBOUNCE_MS);
         }
 
         function updateButtonStates(state) {
@@ -178,7 +229,7 @@
                 navigator.mediaSession.setActionHandler('play', () => {
                     if (isPaused) {
                         resumeReading();
-                    } else if (!synth.speaking && document.getElementById('textInput').value.trim()) {
+                    } else if (!synth.speaking && textInput.value.trim()) {
                         startReading();
                     }
                 });
@@ -205,11 +256,13 @@
             
             u.onboundary = (event) => {
                 currentCharIndex = seg.start + event.charIndex;
+                savePositionToStorage();
             };
             
             u.onend = () => {
                 currentCharIndex = seg.start + seg.text.length;
                 currentSegmentIndex++;
+                savePositionToStorage(true);
                 
                 if (!isPaused && currentSegmentIndex < segments.length) {
                     speakSegment();
@@ -227,15 +280,17 @@
         }
 
         function startReading() {
-            const rawText = document.getElementById('textInput').value.trim();
+            const rawText = textInput.value.trim();
             if (!rawText) {
                 alert('请输入或粘贴文本。');
                 return;
             }
             
+            saveTextToStorage();
             synth.cancel();
             fullText = cleanText(rawText);
             currentCharIndex = 0;
+            savePositionToStorage(true);
             segments = buildSegments(fullText, 0, 1500);
             currentSegmentIndex = 0;
             isPaused = false;
@@ -246,6 +301,7 @@
             if (synth.speaking) {
                 isPaused = true;
                 synth.cancel();
+                savePositionToStorage(true);
                 updateButtonStates('paused');
                 updateMediaSession('paused');
             }
@@ -402,7 +458,9 @@
                 currentCharIndex = 0;
                 segments = [];
                 currentSegmentIndex = 0;
-                document.getElementById('textInput').value = remaining;
+                textInput.value = remaining;
+                saveTextToStorage();
+                savePositionToStorage(true);
                 synth.cancel();
                 isPaused = false;
                 updateButtonStates('idle');
@@ -440,14 +498,27 @@
             localStorage.setItem('backwardWords', backwardWords.value);
         });
 
+        textInput.addEventListener('input', debouncedSaveText);
+        textInput.addEventListener('paste', () => {
+            setTimeout(debouncedSaveText, 0);
+        });
+
+        window.addEventListener('beforeunload', () => {
+            savePositionToStorage(true);
+            saveTextToStorage();
+        });
+
         // Initialize
+        loadFromStorage();
         populateVoiceList();
         if (typeof synth.onvoiceschanged !== 'undefined') {
             synth.onvoiceschanged = populateVoiceList;
         }
         initRate();
         initBackwardWords();
-        updateButtonStates('idle');
+        if (currentCharIndex <= 0 || currentCharIndex >= fullText.length) {
+            updateButtonStates('idle');
+        }
     </script>
 </body>
 </html>
