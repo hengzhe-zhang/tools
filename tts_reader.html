@@ -94,6 +94,7 @@
         <button id="startBtn">开始朗读</button>
         <button id="pauseBtn" disabled>暂停</button>
         <button id="resumeBtn" disabled>继续朗读</button>
+        <button id="startFromBeginningBtn" disabled>从头开始</button>
         <button id="backwardBtn" disabled>⏪ 后退</button>
         <button id="copyBtn" disabled>复制剩余文本</button>
     </div>
@@ -124,6 +125,7 @@
         const resumeBtn = document.getElementById('resumeBtn');
         const backwardBtn = document.getElementById('backwardBtn');
         const copyBtn = document.getElementById('copyBtn');
+        const startFromBeginningBtn = document.getElementById('startFromBeginningBtn');
         const textInput = document.getElementById('textInput');
 
         function cleanText(text) {
@@ -176,15 +178,16 @@
 
         function updateButtonStates(state) {
             const states = {
-                idle: { start: false, pause: true, resume: true, backward: true, copy: true },
-                playing: { start: true, pause: false, resume: true, backward: false, copy: false },
-                paused: { start: true, pause: true, resume: false, backward: false, copy: false }
+                idle: { start: false, pause: true, resume: true, startFromBeginning: false, backward: true, copy: true },
+                playing: { start: true, pause: false, resume: true, startFromBeginning: true, backward: false, copy: false },
+                paused: { start: true, pause: true, resume: false, startFromBeginning: false, backward: false, copy: false }
             };
             
             const s = states[state];
             startBtn.disabled = s.start;
             pauseBtn.disabled = s.pause;
             resumeBtn.disabled = s.resume;
+            startFromBeginningBtn.disabled = s.startFromBeginning;
             backwardBtn.disabled = s.backward;
             copyBtn.disabled = s.copy;
         }
@@ -447,6 +450,7 @@
         startBtn.addEventListener('click', startReading);
         pauseBtn.addEventListener('click', pauseReading);
         resumeBtn.addEventListener('click', resumeReading);
+        startFromBeginningBtn.addEventListener('click', startReading);
         backwardBtn.addEventListener('click', goBackward);
         
         copyBtn.addEventListener('click', () => {
