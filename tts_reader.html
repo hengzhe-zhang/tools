@@ -163,6 +163,7 @@
                 const pos = Math.max(0, Math.min(parseInt(savedPos, 10) || 0, fullText.length));
                 currentCharIndex = pos;
                 if (currentCharIndex > 0 && currentCharIndex < fullText.length) {
+                    isPaused = true;
                     updateButtonStates('paused');
                 }
             }
