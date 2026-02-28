@@ -50,6 +50,12 @@
         button#backwardBtn:disabled {
             background-color: #444444;
         }
+        button#backToParagraphBtn {
+            background-color: #cc6600;
+        }
+        button#backToParagraphBtn:disabled {
+            background-color: #444444;
+        }
         select, input[type="number"] {
             background-color: #1e1e1e;
             color: #eeeeee;
@@ -96,7 +102,9 @@
         <button id="resumeBtn" disabled>继续朗读</button>
         <button id="startFromBeginningBtn" disabled>从头开始</button>
         <button id="backwardBtn" disabled>⏪ 后退</button>
+        <button id="backToParagraphBtn" disabled>⏪ 回段落首</button>
         <button id="copyBtn" disabled>复制剩余文本</button>
+        <button id="copyCurrentSentenceBtn" disabled>复制当前句</button>
     </div>
 
     <script>
@@ -124,7 +132,9 @@
         const pauseBtn = document.getElementById('pauseBtn');
         const resumeBtn = document.getElementById('resumeBtn');
         const backwardBtn = document.getElementById('backwardBtn');
+        const backToParagraphBtn = document.getElementById('backToParagraphBtn');
         const copyBtn = document.getElementById('copyBtn');
+        const copyCurrentSentenceBtn = document.getElementById('copyCurrentSentenceBtn');
         const startFromBeginningBtn = document.getElementById('startFromBeginningBtn');
         const textInput = document.getElementById('textInput');
 
@@ -178,9 +188,9 @@
 
         function updateButtonStates(state) {
             const states = {
-                idle: { start: false, pause: true, resume: true, startFromBeginning: false, backward: true, copy: true },
-                playing: { start: true, pause: false, resume: true, startFromBeginning: true, backward: false, copy: false },
-                paused: { start: true, pause: true, resume: false, startFromBeginning: false, backward: false, copy: false }
+                idle: { start: false, pause: true, resume: true, startFromBeginning: false, backward: true, backToParagraph: true, copy: true, copyCurrent: true },
+                playing: { start: true, pause: false, resume: true, startFromBeginning: true, backward: false, backToParagraph: false, copy: false, copyCurrent: true },
+                paused: { start: true, pause: true, resume: false, startFromBeginning: false, backward: false, backToParagraph: false, copy: false, copyCurrent: true }
             };
             
             const s = states[state];
@@ -189,7 +199,9 @@
             resumeBtn.disabled = s.resume;
             startFromBeginningBtn.disabled = s.startFromBeginning;
             backwardBtn.disabled = s.backward;
+            backToParagraphBtn.disabled = s.backToParagraph;
             copyBtn.disabled = s.copy;
+            copyCurrentSentenceBtn.disabled = s.copyCurrent;
         }
 
         function buildSegments(text, startOffset, maxLen) {
@@ -384,6 +396,57 @@
             speakSegment();
         }
 
+        // Paragraph = block of text separated by double newline (\n\n). Start = first char after previous \n\n (or start of text).
+        function goBackToParagraphStart() {
+            if (!fullText || currentCharIndex <= 0) return;
+            
+            synth.cancel();
+            isPaused = true;
+            
+            const textBefore = fullText.substring(0, currentCharIndex);
+            const lastDoubleNewline = textBefore.lastIndexOf('\n\n');
+            const paragraphStart = lastDoubleNewline === -1 ? 0 : lastDoubleNewline + 2;
+            
+            currentCharIndex = paragraphStart;
+            
+            isPaused = false;
+            const remaining = fullText.substring(currentCharIndex);
+            segments = buildSegments(remaining, currentCharIndex, 1500);
+            currentSegmentIndex = 0;
+            savePositionToStorage(true);
+            speakSegment();
+        }
+
+        function getCurrentSentenceText() {
+            if (!fullText || currentCharIndex >= fullText.length) return '';
+            if (segments.length > 0) {
+                for (let i = 0; i < segments.length; i++) {
+                    const seg = segments[i];
+                    if (currentCharIndex >= seg.start && currentCharIndex < seg.start + seg.text.length) {
+                        return seg.text;
+                    }
+                    if (currentCharIndex < seg.start) break;
+                }
+                if (segments[0] && currentCharIndex >= segments[0].start) return segments[0].text;
+            }
+            const fromCurrent = fullText.substring(currentCharIndex);
+            const segs = buildSegments(fromCurrent, currentCharIndex, 1500);
+            return segs.length > 0 ? segs[0].text : '';
+        }
+
+        function copyCurrentSentence() {
+            const sentence = getCurrentSentenceText();
+            if (!sentence.trim()) {
+                alert('当前无句子可复制。');
+                return;
+            }
+            copyToClipboard(sentence).then(() => {
+                alert('当前句已复制到剪贴板！');
+            }).catch(() => {
+                alert('复制失败，请尝试手动选择文本并复制。');
+            });
+        }
+
         function populateVoiceList() {
             const voices = synth.getVoices();
             voiceSelect.innerHTML = '';
@@ -452,6 +515,7 @@
         resumeBtn.addEventListener('click', resumeReading);
         startFromBeginningBtn.addEventListener('click', startReading);
         backwardBtn.addEventListener('click', goBackward);
+        backToParagraphBtn.addEventListener('click', goBackToParagraphStart);
         
         copyBtn.addEventListener('click', () => {
             if (!fullText || currentCharIndex >= fullText.length) return;
@@ -475,6 +539,8 @@
                 alert('复制失败，请尝试手动选择文本并复制。');
             });
         });
+
+        copyCurrentSentenceBtn.addEventListener('click', copyCurrentSentence);
 
         document.addEventListener('keydown', (e) => {
             if (e.altKey && e.key.toLowerCase() === 's') {
