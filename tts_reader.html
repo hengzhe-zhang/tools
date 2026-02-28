@@ -188,9 +188,9 @@
 
         function updateButtonStates(state) {
             const states = {
-                idle: { start: false, pause: true, resume: true, startFromBeginning: false, backward: true, backToParagraph: true, copy: true, copyCurrent: true },
-                playing: { start: true, pause: false, resume: true, startFromBeginning: true, backward: false, backToParagraph: false, copy: false, copyCurrent: true },
-                paused: { start: true, pause: true, resume: false, startFromBeginning: false, backward: false, backToParagraph: false, copy: false, copyCurrent: true }
+                idle: { start: false, pause: true, resume: true, startFromBeginning: false, backward: true, backToParagraph: true, copy: true },
+                playing: { start: true, pause: false, resume: true, startFromBeginning: true, backward: false, backToParagraph: false, copy: false },
+                paused: { start: true, pause: true, resume: false, startFromBeginning: false, backward: false, backToParagraph: false, copy: false }
             };
             
             const s = states[state];
@@ -201,7 +201,7 @@
             backwardBtn.disabled = s.backward;
             backToParagraphBtn.disabled = s.backToParagraph;
             copyBtn.disabled = s.copy;
-            copyCurrentSentenceBtn.disabled = s.copyCurrent;
+            copyCurrentSentenceBtn.disabled = !textInput.value.trim();
         }
 
         function buildSegments(text, startOffset, maxLen) {
@@ -418,19 +418,25 @@
         }
 
         function getCurrentSentenceText() {
-            if (!fullText || currentCharIndex >= fullText.length) return '';
+            const text = (fullText || cleanText(textInput.value.trim()));
+            if (!text) return '';
+            const pos = fullText ? currentCharIndex : 0;
+            if (pos >= text.length) {
+                const segs = buildSegments(text, 0, 1500);
+                return segs.length > 0 ? segs[segs.length - 1].text : '';
+            }
             if (segments.length > 0) {
                 for (let i = 0; i < segments.length; i++) {
                     const seg = segments[i];
-                    if (currentCharIndex >= seg.start && currentCharIndex < seg.start + seg.text.length) {
+                    if (pos >= seg.start && pos < seg.start + seg.text.length) {
                         return seg.text;
                     }
-                    if (currentCharIndex < seg.start) break;
+                    if (pos < seg.start) break;
                 }
-                if (segments[0] && currentCharIndex >= segments[0].start) return segments[0].text;
+                if (segments[0] && pos >= segments[0].start) return segments[0].text;
             }
-            const fromCurrent = fullText.substring(currentCharIndex);
-            const segs = buildSegments(fromCurrent, currentCharIndex, 1500);
+            const fromCurrent = text.substring(pos);
+            const segs = buildSegments(fromCurrent, pos, 1500);
             return segs.length > 0 ? segs[0].text : '';
         }
 
@@ -569,7 +575,10 @@
             localStorage.setItem('backwardWords', backwardWords.value);
         });
 
-        textInput.addEventListener('input', debouncedSaveText);
+        textInput.addEventListener('input', () => {
+            debouncedSaveText();
+            copyCurrentSentenceBtn.disabled = !textInput.value.trim();
+        });
         textInput.addEventListener('paste', () => {
             setTimeout(debouncedSaveText, 0);
         });
