@@ -68,6 +68,15 @@
             display: inline-block;
             margin-right: 30px;
         }
+        .progress-row {
+            margin-top: 12px;
+            color: #cccccc;
+            font-size: 14px;
+        }
+        #progressPercent {
+            color: #ffffff;
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
@@ -94,6 +103,9 @@
             <input id="backwardWords" type="number" min="5" max="50" step="5" value="10" style="width:60px;" />
             <span>词</span>
         </div>
+    </div>
+    <div class="progress-row" aria-live="polite">
+        阅读进度：<span id="progressPercent">0%</span>
     </div>
     
     <div class="controls" style="margin-top: 15px;">
@@ -137,6 +149,7 @@
         const copyCurrentSentenceBtn = document.getElementById('copyCurrentSentenceBtn');
         const startFromBeginningBtn = document.getElementById('startFromBeginningBtn');
         const textInput = document.getElementById('textInput');
+        const progressPercent = document.getElementById('progressPercent');
 
         function cleanText(text) {
             return text.replace(/[#*]/g, '');
@@ -154,6 +167,7 @@
         }
 
         function savePositionToStorage(immediate) {
+            updateProgressDisplay();
             if (!immediate) {
                 const now = Date.now();
                 if (now - lastPositionSaveTime < SAVE_POSITION_INTERVAL_MS) return;
@@ -179,6 +193,17 @@
                     updateButtonStates('paused');
                 }
             }
+        }
+
+        function updateProgressDisplay() {
+            const text = fullText || cleanText(textInput.value.trim());
+            if (!text) {
+                progressPercent.textContent = '0%';
+                return;
+            }
+
+            const position = Math.max(0, Math.min(currentCharIndex, text.length));
+            progressPercent.textContent = `${Math.floor((position / text.length) * 100)}%`;
         }
 
         function debouncedSaveText() {
@@ -306,6 +331,7 @@
             synth.cancel();
             fullText = cleanText(rawText);
             currentCharIndex = 0;
+            updateProgressDisplay();
             savePositionToStorage(true);
             segments = buildSegments(fullText, 0, 1500);
             currentSegmentIndex = 0;
@@ -387,6 +413,7 @@
             
             // Update position
             currentCharIndex = newCharIndex;
+            updateProgressDisplay();
             
             // Resume from new position
             isPaused = false;
@@ -408,6 +435,7 @@
             const paragraphStart = lastDoubleNewline === -1 ? 0 : lastDoubleNewline + 2;
             
             currentCharIndex = paragraphStart;
+            updateProgressDisplay();
             
             isPaused = false;
             const remaining = fullText.substring(currentCharIndex);
@@ -543,6 +571,7 @@
                 segments = [];
                 currentSegmentIndex = 0;
                 textInput.value = remaining;
+                updateProgressDisplay();
                 saveTextToStorage();
                 savePositionToStorage(true);
                 synth.cancel();
@@ -587,6 +616,11 @@
         textInput.addEventListener('input', () => {
             debouncedSaveText();
             copyCurrentSentenceBtn.disabled = !textInput.value.trim();
+            if (!synth.speaking) {
+                fullText = cleanText(textInput.value.trim());
+                currentCharIndex = Math.min(currentCharIndex, fullText.length);
+                updateProgressDisplay();
+            }
         });
         textInput.addEventListener('paste', () => {
             setTimeout(debouncedSaveText, 0);
@@ -605,6 +639,7 @@
         }
         initRate();
         initBackwardWords();
+        updateProgressDisplay();
         if (currentCharIndex <= 0 || currentCharIndex >= fullText.length) {
             updateButtonStates('idle');
         }
